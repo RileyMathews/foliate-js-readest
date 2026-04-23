@@ -1,8 +1,20 @@
-const pdfjsPath = path => `/vendor/pdfjs/${path}`
+const moduleBaseUrl = () =>
+    typeof document !== 'undefined' && document.baseURI
+        ? document.baseURI
+        : globalThis.location?.href ?? 'http://localhost/'
 
-import '@pdfjs/pdf.min.mjs'
-const pdfjsLib = globalThis.pdfjsLib
-pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsPath('pdf.worker.min.mjs')
+const pdfjsPath = path => new URL(`vendor/pdfjs/${path}`, moduleBaseUrl()).toString()
+let pdfjsLibPromise = null
+
+const getPdfjsLib = async () => {
+    if (globalThis.pdfjsLib) return globalThis.pdfjsLib
+    pdfjsLibPromise ??= import('./vendor/pdfjs/pdf.mjs').then(() => {
+        const pdfjsLib = globalThis.pdfjsLib
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsPath('pdf.worker.mjs')
+        return pdfjsLib
+    })
+    return await pdfjsLibPromise
+}
 
 const fetchText = async url => await (await fetch(url)).text()
 
@@ -132,6 +144,7 @@ const setupPanningEvents = (doc) => {
 
 const render = async (page, doc, zoom, pageColors) => {
     if (!doc) return
+    const pdfjsLib = await getPdfjsLib()
 
     // Increment generation to invalidate any in-progress render for this doc
     const generation = (renderGenerations.get(doc) || 0) + 1
@@ -317,6 +330,7 @@ const makeTOCItem = async (item, pdf) => {
 const MAX_CACHED_PAGES = 8
 
 export const makePDF = async file => {
+    const pdfjsLib = await getPdfjsLib()
     const transport = new pdfjsLib.PDFDataRangeTransport(file.size, [])
     transport.requestDataRange = (begin, end) => {
         file.slice(begin, end).arrayBuffer().then(chunk => {
@@ -404,6 +418,7 @@ export const makePDF = async file => {
             return url
         },
         createDocument: async () => {
+            const pdfjsLib = await getPdfjsLib()
             const page = await getPage(i)
             const doc = document.implementation.createHTMLDocument('')
 
